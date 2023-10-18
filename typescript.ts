@@ -14,6 +14,7 @@ import { ContactModel } from '../file-save/model/contact.model';
 import { ClientLookupService } from 'projects/ifirm-common-components/src/lib/common-client-lookup/common-client-lookup/client-lookup.service';
 import { JobLookupService } from 'projects/ifirm-common-components/src/lib/job-lookup/job-lookup/job-lookup.service';
 import { WebviewerComponent } from '../../pdf/webviewer/webviewer.component';
+import { UUID } from 'angular2-uuid';
 
 
 @Component({
@@ -29,7 +30,7 @@ export class UploadDocumentComponent implements OnInit {
   totalParts : number = 1;
   partIndex: number = 0;
   partByteOffsetIndex: number = 0;
-  chunkSize = 2688438;
+  chunkSize = 2097152;
   imgType = ".jpeg,.pdf,.png"
   contactModel: ContactModel = new ContactModel();
   selectedTagList: any[] = [];
@@ -49,10 +50,8 @@ export class UploadDocumentComponent implements OnInit {
   entityId: number = null;
   fileList: any[] = [];
   insertLinkInfo: InsertLinkModel = null;
-  disAllowedFileExtensions: ".txt";
+  disAllowedFileExtensions = ".exe,.msi,.bat,.sh,.js,.vbs,.ws,.wsf,.vb,.sc,.scr,.pif,.cmd,.ps1,.resx,.ps1xml,.ps2,.ps2xml,.psc1,.psc2,.bin,.com,.cpl,.gadget,.inf1,.ins,.inx,.isu,.job,.jse,.lnk,.msc,.msp,.mst,.paf,.reg,.sct,.shb,.shs,.u3p,.vbe,.vbscript,.wsh,.url,.dmsurllink,.php,.bin,.chm,.com,.jar,.jsp,.mrc,.msi,.py,.url,.cs";
   fileVal: string;
-  @ViewChild("myFile") myFileRef: ElementRef;
-
 
   constructor(private config: ModalPopupConfig<any>, private pdfdocument: PdfdocumentService, private joblookupservice:JobLookupService, private folderData: ModalPopupService, private dmsDialogService: DmsDialogService, private instance: ModalPopupInstance, private dmsDialogApiService: DmsDialogApiService,
     private toasterService: ToasterService, private resourceService: ResourceService, private clientlookupservice: ClientLookupService) {
@@ -68,42 +67,6 @@ export class UploadDocumentComponent implements OnInit {
 
   }
 
-  // private getCurrentEntityForLookup(entityId: number, entityTypes: entityType) {
-  //   this.dmsDialogApiService.getCurrentEntityForLookup(entityId, entityTypes).then(res => {
-  //     if (res) {
-  //       if (entityTypes === entityType.Job) {
-  //         this.selectedJob.jobCode = res.EntityId.toString();
-  //         this.selectedJob.contactCode = res.JobType;
-  //         this.selectedJob.contactName = res.Name;
-  //         this.contactModel.ContactName = res.Name;
-  //         this.selectedJob.EntityId = res.EntityId;
-  //      //   this.selectedJob.EntityType = entityType.Job;
-  //        // this.selectedJob.Id = this.dmsFile.Id;
-  //         this.createDefaultFolders(this.selectedJob.EntityId, this.selectedJob.EntityType);
-  //       }
-  //       if (entityTypes === entityType.Contact) {
-  //         this.selectedClient.ClientId = this.contactModel.EntityId = res.EntityId;
-  //         this.contactModel.EntityType = entityType.Contact;;
-  //         this.selectedClient.ClientName = this.contactModel.ContactName = res.Name;
-  //         this.contactModel.Id = this.dmsFile.Id;
-  //         this.createDefaultFolders(this.contactModel.EntityId, this.contactModel.EntityType);
-
-  //       }
-  //       this.changeFolderEnabled = false;
-  //     }
-  //   });
-  // }
-
-  private createDefaultFolders(entityId: number, entityTypes: entityType) {
-    this.dmsDialogApiService.createDefaultFolders(entityId, entityTypes).then(res => {
-      // if (res && res.data != undefined) {
-      //   this.toAssignFolderId = res.data;
-      //   if (this.dmsFile.Hierarchy == undefined || this.dmsFile.Hierarchy == null) {
-      //     this.contactModel.FolderId = this.toAssignFolderId;
-      //   }
-      // }
-    });
-  }
   closePopup(result: boolean): void {
     this.instance.close(result);
   }
@@ -163,7 +126,7 @@ export class UploadDocumentComponent implements OnInit {
   }
 
   async uploadFiles() {
-    //this.rData = true;
+    this.rData = true;
     if (this.fileList.length == 0) {
       this.rData = false;
       this.toasterService.error('No files to upload.');
@@ -189,7 +152,7 @@ export class UploadDocumentComponent implements OnInit {
     filedata.ChunkSize = this.chunkSize
     for (const [id, k] of this.fileList.entries()) {
       filedata.FileName = k.ext;
-
+      filedata.FileGuid = UUID.UUID();
       filedata.EntityType = 3
       filedata.FileData = k.filedata.split(':')[1];
       filedata.Size = k.size;
@@ -215,10 +178,12 @@ export class UploadDocumentComponent implements OnInit {
       apiRequestExcludingLast.forEach(async (request: Pdfdocument) => {
         this.pdfdocument.uploadPdfFilesInChunk(request).then(response => {
           if (response && response.success) {
+            this.rData = false;
             count++;
             if (count === apiRequestExcludingLast.length) {
               this.pdfdocument.uploadPdfFilesInChunk(lastApiRequest).then(res => {
                 if (res && res.success) {
+                  this.instance.close({ result: false });
                   let fileIds: number[] = [];
                   fileIds.push(res.data)
                   this.pdfdocument.updateRetentionDateForFiles(fileIds);
@@ -228,14 +193,12 @@ export class UploadDocumentComponent implements OnInit {
                   this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
                 }
                 this.rData = false;
-               // this.cdRef.detectChanges();
               })
             }
           }
           else {
             this.rData = false;
             this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
-           // this.cdRef.detectChanges();
           }
         })
       });
@@ -243,6 +206,7 @@ export class UploadDocumentComponent implements OnInit {
     else {
       this.pdfdocument.uploadPdfFilesInChunk(uploadRequest[0]).then(res => {
         if (res && res.success) {
+          this.instance.close({ result: false });
           let fileIds: number[] = [];
           fileIds.push(res.data)
           this.pdfdocument.updateRetentionDateForFiles(fileIds);
@@ -251,8 +215,6 @@ export class UploadDocumentComponent implements OnInit {
         else {
           this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
         }
-
-        //this.cdRef.detectChanges();
         this.rData = false;
       })
     }
@@ -333,6 +295,7 @@ export class UploadDocumentComponent implements OnInit {
   async BuildUploadRequest(fileData: any, pdfdocumentRequest: Pdfdocument): Promise<Pdfdocument[]> {
     console.log('build',pdfdocumentRequest)
     let uploadRequests: Pdfdocument[] = [];
+    let fileguid = UUID.UUID()
     const blob = new Blob([fileData], { type: 'application/pdf' });
     if (this.chunkSize >= blob.size) {
       pdfdocumentRequest.TotalParts = 1;
@@ -349,6 +312,9 @@ export class UploadDocumentComponent implements OnInit {
         totalOffsetIndex = totalOffsetIndex + (blob.size - totalOffsetIndex);
       }
       else {
+        if(i == 0)
+        totalOffsetIndex = 0;
+        else
         totalOffsetIndex = totalOffsetIndex + this.chunkSize;
       }
       var slice: BlobPart = blob.slice(startOffsetIndex, totalOffsetIndex);
@@ -366,7 +332,7 @@ export class UploadDocumentComponent implements OnInit {
       uploadRequest.EntityId = pdfdocumentRequest.EntityId;
       uploadRequest.Hierarchy = pdfdocumentRequest.Hierarchy;
       uploadRequest.FolderId = pdfdocumentRequest.FolderId;
-      uploadRequest.FileGuid = pdfdocumentRequest.FileGuid;
+      uploadRequest.FileGuid = fileguid;
       uploadRequest.FileName = pdfdocumentRequest.FileName;
       uploadRequest.IsUploadFromTrayapp = pdfdocumentRequest.IsUploadFromTrayapp;
       uploadRequests.push(uploadRequest);
