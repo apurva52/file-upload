@@ -1,0 +1,85 @@
+<div id="dmsAddFolder" class="mainContent">
+    
+    <ifirm-loader [loading]="rData"></ifirm-loader>
+    <div class="row col-sm-12">
+        <div class="col-sm-6">
+            <label>Upload To:</label>
+            <select class="serachBoxSelect" [(ngModel)]="uploadTo">
+                <option value="number:4">Job</option>
+                <option value="number:3">Contact</option>
+                <option value="number:1">Internal Documents</option>
+            </select>
+        </div>
+        <div class="col-sm-5" *ngIf="uploadTo == 'number:3'">
+            <label>Select Contact:</label>
+            <input type="text" [(ngModel)]="contact">
+            <a tabindex="-1" (click)="showContactLookup()">
+                <img border="0" alt="click here to look up clients" src="images/set1_more.gif">
+            </a>
+        </div>
+        <div class="col-sm-5" *ngIf="uploadTo == 'number:4'">
+            <label>Select Job:</label>
+            <input type="text" [(ngModel)]="job">
+            <a tabindex="-1" (click)="showJobLookup()">
+                <img border="0" alt="click here to look up clients" src="images/set1_more.gif">
+            </a>
+        </div>
+    </div>
+    <div class="col-sm-10 pathpad">
+        <span class="ifirmbutton">
+            <button type="submit" class="btnchange" (click)="folderPopup()">Change Folder</button><strong>{{pathName}}</strong>
+        </span>
+    </div>
+    <div class="col-sm-10 pathpad">
+        <input  title="file input" accept="{{disAllowedFileExtensions}}" (change)="onChange($event)" type="file" multiple="multiple">
+        <span class="ifirmbutton">
+            <button type="file" class="btnchange">Select Files</button>
+        </span>
+    </div>
+    <br>
+    <div *ngIf="fileList.length > 0">
+        <div class="col-sm-10" *ngFor="let file of fileList; let i = index">
+            <div class="input-group">
+                <input type="text" class="input-file" [disabled]="file.disabled" [id]="i" [value]="file.ext">&nbsp;
+                <div class="input-group-prepend" style="height: 35px;">
+                    <span *ngIf="renameBtn" (click)="save(i)" [hidden]="file.disabled" 
+                        class="input-group-text cursor">Save</span>
+                    &nbsp;&nbsp;
+                    <span class="ifirmbutton">
+                        <button  class="btnchange" (click)="renameFile(file,i)">Rename</button>
+                    </span>
+                    <span class="ifirmbutton">
+                        <button  class="btnchange" (click)="removeFile(i)">Remove</button>
+                    </span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+ 
+    <div>
+        <ngx-file-drop dropZoneLabel="Drop files here" (onFileDrop)="dropped($event)" accept="{{disAllowedFileExtensions}}">
+            <ng-template ngx-file-drop-content-tmp let-openFileSelector="openFileSelector">
+                Click "Select Files" or drag and drop file(s) here.        
+            </ng-template>
+        </ngx-file-drop>
+        </div>
+        <br>
+    <div *ngIf="tagLoaded">
+        <ng-select [items]="tags" [placeholder]="searchTag" [hideSelected]="true" multiple="true" bindLabel="name" 
+            [(ngModel)]="selectedTagList" [ngModelOptions]="{standalone: true}">
+        </ng-select>
+    </div>
+    <br>
+
+    <div class="btnArea">
+        <span class="ifirmbutton">
+            <button type="submit" class="btnSuccess" (click)="uploadFiles()">Upload Files</button>
+        </span>
+        <span class="ifirmbutton">
+            <button type="button" class="btnSecondary" [ifirmResource]="'ifirm.common.cancel'"
+                (click)="closePopup(false)">
+            </button>
+        </span>
+    </div>
+</div>
