@@ -1,0 +1,71 @@
+#dmsTxtNewFolder {
+    height: 15px;
+    width : 96%;
+}
+
+#dmsAddFolder .validationBox {
+    margin-top: 5px !important;
+}
+
+#dmsAddFolder fieldset {
+    padding: 15px 0px !important;
+}
+
+#dmsAddFolder .validationFolderName {
+    height: 22px;
+}
+.modal-window{
+min-width: 51rem  !important
+}
+.btnchange{
+    background-color: #85BC20;
+    color: #fff;
+}
+.cursor{
+    cursor: pointer;
+}
+select {
+width: 100%;
+height: 2.1rem;
+}
+input {
+    height: 31px !important;
+    border-radius: 0 !important;
+    border: 0.0625rem solid #757575 !important;
+    width: 90%;
+    display: inline-block;
+}
+input[type='file'] {
+    color: transparent !important;
+    position: absolute; right: 0px; top: 0px; font-family: Arial; font-size: 118px; margin: 0px; padding: 0px; cursor: pointer; opacity: 0; height: 100%;
+  }
+  .input-file{
+    width:378px;
+  }
+  .btnArea{
+    float: right;
+  }
+:host ::ng-deep{
+    .ngx-file-drop__content{
+        color: unset !important;
+        border: 1px dashed black;
+        font-weight: inherit;
+        height: 40px !important;
+        padding: 10px;
+    padding: 10px;
+    }
+    .modal-window {
+        min-width: 51rem;
+    }
+
+    .ngx-file-drop__drop-zone{
+        height: unset !important;
+        border: none !important;
+    }
+    .input-group{
+        margin-bottom: 8px;
+    }
+}
+.pathpad{
+    padding-top: 9px;
+}
