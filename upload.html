@@ -1,83 +1,138 @@
-<div id="dmsAddFolder" class="mainContent">
-    
-    <ifirm-loader [loading]="rData"></ifirm-loader>
-    <div class="row col-sm-12">
-        <div class="col-sm-6">
-            <label>Upload To:</label>
-            <select class="serachBoxSelect" [(ngModel)]="uploadTo">
-                <option value="number:4">Job</option>
-                <option value="number:3">Contact</option>
-                <option value="number:1">Internal Documents</option>
+<div id="dmsUploadFile" class="mainContent">
+    <div *ngIf="!uploading else uploadstart">
+        <ifirm-loader [loading]="loader"></ifirm-loader>
+    <div class="wk-row wk-col-12">
+        <div class="wk-col-6">
+            <label [ifirmResource]="'dms.fileuploaddialog.uploadto'"></label>
+            <select class="serachBoxSelect" [(ngModel)]="uploadToVal" (change)="UploadChange($event)">
+                <ng-container *ngFor="let item of entityTypes">
+                    <option *ngIf="item.isAllowed" [value]="item.id" [selected]="item.id === uploadToVal">{{item.name}}</option>
+                </ng-container>
             </select>
         </div>
-        <div class="col-sm-5" *ngIf="uploadTo == 'number:3'">
-            <label>Select Contact:</label>
-            <input type="text" [(ngModel)]="contact">
+        <div class="wk-col-5" *ngIf="uploadToVal == uploadEnum.Contact">
+            <label [ifirmResource]="'dms.fileuploaddialog.selectcontact'"></label>
+            <input type="text" [(ngModel)]="contact">&nbsp;
             <a tabindex="-1" (click)="showContactLookup()">
                 <img border="0" alt="click here to look up clients" src="images/set1_more.gif">
             </a>
         </div>
-        <div class="col-sm-5" *ngIf="uploadTo == 'number:4'">
-            <label>Select Job:</label>
-            <input type="text" [(ngModel)]="job">
+        <div class="wk-col-5" *ngIf="uploadToVal == uploadEnum.Job">
+            <label [ifirmResource]="'dms.fileuploaddialog.selectjob'"></label>
+            <input type="text" [(ngModel)]="job">&nbsp;
             <a tabindex="-1" (click)="showJobLookup()">
                 <img border="0" alt="click here to look up clients" src="images/set1_more.gif">
             </a>
         </div>
+        <div class="wk-col-5" *ngIf="uploadToVal == uploadEnum.Hr">
+            <label [ifirmResource]="'dms.fileuploaddialog.selectuser'"></label>
+            <select class="serachBoxSelect" [(ngModel)]="hrSelectVal">
+                <option *ngFor="let value of users" [value]="value.UserId">{{value.UserName}}</option>
+            </select>
+        </div>
     </div>
-    <div class="col-sm-10 pathpad">
-        <span class="ifirmbutton">
-            <button type="submit" class="btnchange" (click)="folderPopup()">Change Folder</button><strong>{{pathName}}</strong>
+    <div class="wk-col-10 pathpad">
+        <span class="ifirmbutton"> 
+            <button type="submit" class="btnchange" [ifirmResource]="'dms.fileuploaddialog.changefolder'" (click)="folderPopup()"></button><strong>{{pathName}}</strong>
         </span>
     </div>
-    <div class="col-sm-10 pathpad">
+    <div class="wk-col-10 pathpad">
         <input  title="file input" accept="{{disAllowedFileExtensions}}" (change)="onChange($event)" type="file" multiple="multiple">
         <span class="ifirmbutton">
-            <button type="file" class="btnchange">Select Files</button>
+            <button type="file" class="btnchange" [ifirmResource]="'dms.fileuploaddialog.selectfiles'"></button>
         </span>
     </div>
     <br>
     <div *ngIf="fileList.length > 0">
-        <div class="col-sm-10" *ngFor="let file of fileList; let i = index">
-            <div class="input-group">
-                <input type="text" class="input-file" [disabled]="file.disabled" [id]="i" [value]="file.ext">&nbsp;
-                <div class="input-group-prepend" style="height: 35px;">
-                    <span *ngIf="renameBtn" (click)="save(i)" [hidden]="file.disabled" 
-                        class="input-group-text cursor">Save</span>
-                    &nbsp;&nbsp;
+        <div class="wk-row wk-col-12" *ngFor="let file of fileList; let i = index">
+            <!-- <div class="input-group"> -->
+                <div class="wk-col-6 input-group">
+                <input type="text" class="input-file" [disabled]="file.disabled" [id]="i" maxlength="100" [(ngModel)]="file.ext">
+                </div>
+                <div class="input-group-prepend pad wk-col-5">
+
+                    <button *ngIf="renameBtn" type="buttton" (click)="save(i,file.ext)" [hidden]="file.disabled"  class="btnSecondary" [ifirmResource]="'ifirm.common.save'"></button>
                     <span class="ifirmbutton">
-                        <button  class="btnchange" (click)="renameFile(file,i)">Rename</button>
+                        <button  class="btnchange" (click)="renameFile(file,i)" [hidden]="!file.disabled"   [ifirmResource]="'dms.rename'"></button>
                     </span>
                     <span class="ifirmbutton">
-                        <button  class="btnchange" (click)="removeFile(i)">Remove</button>
+                        <button  class="btnchange" (click)="removeFile(i)" [ifirmResource]="'ifirm.common.remove'"></button>
                     </span>
                 </div>
-            </div>
-
         </div>
+      
     </div>
- 
-    <div>
-        <ngx-file-drop dropZoneLabel="Drop files here" (onFileDrop)="dropped($event)" accept="{{disAllowedFileExtensions}}">
+    <div *ngIf="errorFlag" class="wk-row wk-col-12 pad-left">
+        <div class="alert alert-error">{{errorMessage}}</div>
+    </div>
+    <br>
+    <div class="wk-row wk-col-12 pad-left">
+        <ngx-file-drop  (onFileDrop)="dropped($event)" accept="{{disAllowedFileExtensions}}">
             <ng-template ngx-file-drop-content-tmp let-openFileSelector="openFileSelector">
-                Click "Select Files" or drag and drop file(s) here.        
+                <span [ifirmResource]="'dms.uploadinstruction'"></span>
             </ng-template>
         </ngx-file-drop>
         </div>
-        <br>
-    <div *ngIf="tagLoaded">
-        <ng-select [items]="tags" [placeholder]="searchTag" [hideSelected]="true" multiple="true" bindLabel="name" 
-            [(ngModel)]="selectedTagList" [ngModelOptions]="{standalone: true}">
-        </ng-select>
+    </div>
+
+<ng-template #uploadstart>
+
+    <div class="wk-row wk-col-12">
+        <span *ngIf="!errorHeader" class="!errorHeader">{{headerName}}</span>
+        <span *ngIf="errorHeader" [ifirmResource]="'dms.fileuploaddialog.uploadfailed'" class="dms-header-message"></span>
+    </div>
+    <br />
+    <div id="uploadFile" class="dms-upload-dialog-panel wk-row wk-col-12">
+        <span class="dms-uploadto-folderpath bold" [ifirmResource]="'dms.common.folder'"></span>:
+        <span class="dms-uploadto-folderpath bold">{{pathName}}</span>
     </div>
     <br>
+    <ng-container  *ngFor="let files of fileList">
+    <div *ngIf="files.error " class="pathpad pad-left">
+        <div  class="alert alert-error wk-col-11">{{files.ext}}
+            <span [ifirmResource]="'dms.fileuploaddialog.uploadfailed'"></span>
+        </div>
+    </div>
+    <div *ngIf="files.progressVal === 100" class="pathpad alert pad-left">
+        <div  class="success wk-col-11">{{files.ext}}
+            <span [ifirmResource]="'dms.fileuploaddialog.uploadsucceeded'"></span>
+        </div>
+    </div>
 
+    <div class="wk-col-11 spinner mr-left" *ngIf="!files.error && files.progressVal !== 100">
+        <span class="div-upload-file">
+            <div class="qq-progress-bar-container-selector">
+                <div role="progressbar" class="qq-progress-bar" style="width: 100%;"></div>
+            </div>
+            <span class="qq-upload-spinner-selector qq-upload-spinner" style="display:none"></span>
+            <span class="qq-upload-file-selector qq-upload-file qq-editable">{{files.ext}}</span>&nbsp;
+            <span class="qq-upload-size-selector qq-upload-size">{{files.progressVal}}% 
+                <span class="qq-upload-size-selector qq-upload-size" [ifirmResource]="'ifirm.common.for'"></span>&nbsp;{{files.fileSizeMB}}</span>
+        </span>
+    </div>
+    <br>
+</ng-container>
+</ng-template>
+<br>
+
+<div *ngIf="tagLoaded">
+    <div class="wk-col-4">
+        <span [ifirmResource]="'dms.common.tags'"> </span>
+    </div>
+    <div class="wk-row wk-col-12 pad-left">
+    <ng-select [items]="tags" [placeholder]="searchTag"  [hideSelected]="true" multiple="true" bindLabel="name" 
+        [(ngModel)]="selectedTagList" [ngModelOptions]="{standalone: true}">
+    </ng-select>
+    </div>
+</div>
+        <br>
     <div class="btnArea">
         <span class="ifirmbutton">
-            <button type="submit" class="btnSuccess" (click)="uploadFiles()">Upload Files</button>
+            <button *ngIf="!uploading" ctype="submit" class="btnSuccess" (click)="uploadFiles()"
+                [ifirmResource]="'dms.uploadfiles'"></button>
         </span>
         <span class="ifirmbutton">
-            <button type="button" class="btnSecondary" [ifirmResource]="'ifirm.common.cancel'"
+            <button type="button" class="btnSecondary" [ifirmResource]="uploading?'ifirm.common.close' :'ifirm.common.cancel'"
                 (click)="closePopup(false)">
             </button>
         </span>
