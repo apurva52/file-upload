@@ -1,20 +1,19 @@
-import { Component, OnInit, ElementRef, ViewChild, HostListener } from '@angular/core';
-import { FormGroup} from '@angular/forms';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ResourceService, ModalPopupConfig, ModalPopupInstance, ModalPopupService } from '@ifirm';
 import { ToasterService } from 'projects/ifirm-common-components/src/lib/toaster//toaster.service';
-import { AddFolderModel } from '../models/add-folder.model';
 import { DmsDialogApiService } from '../dms-dialog-api.service';
-import { DmsDialogService } from '../dms-dialog.service';
-import { PdfdocumentService } from '../../pdf/pdfdocument.service';
-import { Pdfdocument } from '../../pdf/pdfdocument.model';
+import { UploadDocumentService } from './services/upload-document.service';
+import { Uploaddocument } from './models/upload-document.model';
 import { InsertLinkModel } from '../models/insert-link.model';
-import { entityType, fileKind, fileSource } from '../../constants/app-constants';
+import { AppConstants, entityType, fileKind, fileSource } from '../../constants/app-constants';
 import { JobModel } from '../file-save/model/job.model';
 import { ContactModel } from '../file-save/model/contact.model';
-import { ClientLookupService } from 'projects/ifirm-common-components/src/lib/common-client-lookup/common-client-lookup/client-lookup.service';
-import { JobLookupService } from 'projects/ifirm-common-components/src/lib/job-lookup/job-lookup/job-lookup.service';
-import { WebviewerComponent } from '../../pdf/webviewer/webviewer.component';
 import { UUID } from 'angular2-uuid';
+import { FolderSelectionComponent } from '../folder-selection/folder-selection.component';
+import { ErrorBoxComponent } from 'projects/ifirm-common-components/src/lib/modal-popup/error-box/error-box.component';
+import { JobLookupComponent } from 'projects/ifirm-common-components/src/lib/job-lookup/job-lookup/job-lookup.component';
+import { ClientLookupComponent } from 'projects/ifirm-common-components/src/lib/common-client-lookup/common-client-lookup/client-lookup.component';
+import { concatMap, from, map, Subscription } from 'rxjs';
 
 
 @Component({
@@ -22,49 +21,91 @@ import { UUID } from 'angular2-uuid';
   templateUrl: './upload-documents.component.html',
   styleUrls: ['./upload-documents.component.scss', '../dms-dialog-style.scss']
 })
-export class UploadDocumentComponent implements OnInit {
-  @ViewChild(WebviewerComponent) webviewercomp:WebviewerComponent
-  uploadTo = 'number:4'
+export class UploadDocumentComponent implements OnInit, OnDestroy {
+  uploadEnum = entityType;
+  uploadToVal = entityType.Job
   tags: any[] = [];
   tagNames = [];
-  totalParts : number = 1;
+  errorMessage = '';
+  totalParts: number = 1;
   partIndex: number = 0;
   partByteOffsetIndex: number = 0;
   chunkSize = 2097152;
-  imgType = ".jpeg,.pdf,.png"
   contactModel: ContactModel = new ContactModel();
   selectedTagList: any[] = [];
   selectedJob: JobModel = new JobModel();
   renameBtn = false;
+  apiRequestExcludingLast: Uploaddocument[] = []
   tagLoaded: boolean;
   folderId: number = 1;
-  enhancedmaxSize = 23333000;
   hierarchy: string = null;
-  addFolderForm: FormGroup;
-  entityInfo: AddFolderModel = null;
-  rData: boolean = false;
+  loader: boolean = false;
   searchTag: string = 'Search';
-  pathName = 'To Assign';
+  pathName = this.resourceService.getText('dms.toassign');
+  errorFlag = false;
   contact: string = null;
-  job :string = null;
+  job: string = null;
   entityId: number = null;
   fileList: any[] = [];
-  insertLinkInfo: InsertLinkModel = null;
-  disAllowedFileExtensions = ".exe,.msi,.bat,.sh,.js,.vbs,.ws,.wsf,.vb,.sc,.scr,.pif,.cmd,.ps1,.resx,.ps1xml,.ps2,.ps2xml,.psc1,.psc2,.bin,.com,.cpl,.gadget,.inf1,.ins,.inx,.isu,.job,.jse,.lnk,.msc,.msp,.mst,.paf,.reg,.sct,.shb,.shs,.u3p,.vbe,.vbscript,.wsh,.url,.dmsurllink,.php,.bin,.chm,.com,.jar,.jsp,.mrc,.msi,.py,.url,.cs";
+  uploaConfigInfo = null;
+  disAllowedFileExtensions = AppConstants.disAllowedFileExtension;
   fileVal: string;
-
-  constructor(private config: ModalPopupConfig<any>, private pdfdocument: PdfdocumentService, private joblookupservice:JobLookupService, private folderData: ModalPopupService, private dmsDialogService: DmsDialogService, private instance: ModalPopupInstance, private dmsDialogApiService: DmsDialogApiService,
-    private toasterService: ToasterService, private resourceService: ResourceService, private clientlookupservice: ClientLookupService) {
-    this.insertLinkInfo = config.data as InsertLinkModel;
-    this.entityInfo = config.data as AddFolderModel;
+  hrSelectVal: number;
+  users: [] = [];
+  entityTypes: { name: string | Promise<string>, id: number, isAllowed: boolean }[];
+  uploading = false;
+  headerName: string;
+  roles: any;
+  errorHeader = false;
+  private subscriptions = new Subscription()
+  constructor(private config: ModalPopupConfig<any>, private uploaddocument: UploadDocumentService, private popupservice: ModalPopupService, private instance: ModalPopupInstance, private dmsDialogApiService: DmsDialogApiService,
+    private toasterService: ToasterService, private resourceService: ResourceService, private popupService: ModalPopupService) {
+    this.uploaConfigInfo = config.data;
+    this.uploadToVal = this.uploaConfigInfo.EntityType;
+    this.entityId = this.uploaConfigInfo.EntityId;
+    this.roles = this.uploaConfigInfo.UserRoles;
+    this.folderId = this.uploaConfigInfo.FolderId;
+    this.getSelectedFolder(this.uploaConfigInfo.Hierarchy, this.uploaConfigInfo.FolderId, this.uploaConfigInfo.EntityType)
   }
 
   ngOnInit(): void {
-    this.tagLoaded = this.tagNames.length == 0 ? false : true;
-    this.insertLinkInfo.FileKind = fileKind.File;
-    this.insertLinkInfo.FileSource = fileSource.LinkUrl;
-    this.getTagList(this.insertLinkInfo);
+    this.entityTypes = [{ name: this.resourceService.get("ifirm.common.job"), id: entityType.Job, isAllowed: this.isAllowApmAccess() },
+    { name: this.resourceService.get("ifirm.common.contact"), id: entityType.Contact, isAllowed: this.isContactAllowed() },
+    { name: this.resourceService.get("dms.settings.internaldocuments"), id: entityType.Firm, isAllowed: this.isAllowInternaldocuments() },
+    { name: this.resourceService.get("dms.settings.hrdocuments"), id: entityType.Hr, isAllowed: this.uploaConfigInfo.EntityType == this.uploadEnum.Hr },
+    { name: this.resourceService.get("dms.fileuploaddialog.yourhrfolder"), id: entityType.Hr, isAllowed: this.uploaConfigInfo.EntityType == this.uploadEnum.User },
+    { name: this.resourceService.get("dms.fileuploaddialog.youruserfolder"), id: entityType.User, isAllowed: this.uploaConfigInfo.EntityType == this.uploadEnum.User }];
 
+    this.tagLoaded = this.tagNames.length == 0 ? false : true;
+    this.uploaConfigInfo.FileKind = fileKind.File;
+    this.uploaConfigInfo.FileSource = fileSource.LinkUrl;
+    this.getTagList(this.uploaConfigInfo);
+    if (this.uploaConfigInfo.EntityType == entityType.Hr) {
+      if( this.uploaConfigInfo.EntityId !== 0 && this.uploaConfigInfo.EntityId != undefined )
+      this.hrSelectVal = this.uploaConfigInfo.EntityId;
+      else {
+        this.hrSelectVal = Number(this.roles?.userId);
+      }
+      this.getUsers(false);
+    }
+    if (this.uploaConfigInfo.EntityType == entityType.Contact || this.uploaConfigInfo.EntityType == entityType.Job) {
+      this.uploaddocument.getCurrentEntityForLookup(this.uploaConfigInfo.EntityId, this.uploaConfigInfo.EntityType).then(res => {
+        if (res) {
+          if (this.uploaConfigInfo.EntityType == entityType.Contact)
+            this.contact = res.Name;
+          if (this.uploaConfigInfo.EntityType == entityType.Job)
+            this.job = res.Name;
+        }
+      })
+    }
+
+  }
+  
+  getUsers(displaySystemUserAsSharedFolder) {
+    this.uploaddocument.getUsers(displaySystemUserAsSharedFolder).then(res => {
+      this.users = res ? res : []
+    }
+    )
   }
 
   closePopup(result: boolean): void {
@@ -72,25 +113,76 @@ export class UploadDocumentComponent implements OnInit {
   }
 
   folderPopup(): void {
-    let data = {
-      "EntityType": 3,
-      "EntityId": "1134",
-      "CurrentFolderId": 0,
-      "CurrentFolderhierarchy": null,
-      "isImmediateFolder": false
+    if (!this.checkJobandContactField())
+      return;
+    const data = {
+      EntityId: (this.uploadToVal == entityType.Firm) ? 1 : this.entityId,
+      EntityType: this.uploaConfigInfo.EntityType,
+      CurrentFolderId: this.folderId || 0,
+      CurrentFolderhierarchy: this.uploaConfigInfo.Hierarchy
     }
-    this.dmsDialogService.openDialog('folderselection', data, null);
-    this.folderData.postdata.subscribe((res) => {
-      this.folderId = res.tree.FolderId;
-      this.hierarchy = res.tree.Hierarchy;
-      this.pathName = res.name;
-
+    const config = new ModalPopupConfig();
+    config.data = data;
+    let instance = this.popupservice.open<FolderSelectionComponent>(this.resourceService.getText('dms.selectfolder'), FolderSelectionComponent, config);
+    const subscription = instance.afterClosed.subscribe(result => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      if (result !== null) {
+        this.getSelectedFolder(result.Hierarchy, result.FolderId, this.uploaConfigInfo.entityType, true)
+        this.folderId = result.FolderId;
+        this.hierarchy = result.Hierarchy;
+      }
     });
+
+  }
+  private getFolderHierarchy(hierarchy) {
+    this.dmsDialogApiService.getFolderHierarchy(hierarchy).then(res => {
+      if (res && res.FolderHierarchies) {
+        this.pathName = res.FolderHierarchies.map(x => x.FolderName).reduce((fullName, folderName) =>
+          fullName ? `${fullName}/${folderName}` : folderName, "");
+      }
+    });
+  }
+
+  private getSelectedFolder(Hierarchy, folderId, entityType, flag=false) :void {
+    this.pathName = "";
+    const hierarchy = `${Hierarchy}/${folderId}`;
+    if (flag) {
+      this.getFolderHierarchy(hierarchy)
+    }
+    else {
+      if ((folderId === undefined || folderId === null || folderId <= 0) && (Hierarchy === undefined || Hierarchy === null)) {
+        this.setDefaultPath(entityType);
+      }
+      else if ((folderId !== null || folderId >= 0) && (Hierarchy !== null)) {
+        this.getFolderHierarchy(hierarchy)
+      }
+      else {
+        this.pathName = this.uploaConfigInfo.FolderName;
+      }
+    }
+  }
+
+  private setDefaultPath(entityType) :void {
+    if (entityType === this.uploadEnum.Contact) {
+      this.pathName = this.resourceService.getText('dms.toassign');
+    }
+    else if (entityType === this.uploadEnum.Firm) {
+      this.entityId = 1;
+      this.folderId = this.uploaConfigInfo.InternalDocumentsFolderId;
+      this.pathName = this.resourceService.getText('dms.home.internaldocuments');
+    }
+    else {
+      this.pathName = "<root>";
+    }
   }
   onChange(event: any): void {
     const filedata = Object.values(event.target.files)
     this.getFileData(filedata);
-    this.craeteFileStructure(this.checkDuplicateFile(filedata))
+    this.createFileStructure(this.checkDuplicateFile(filedata))
+    if (this.fileList.length > 0)
+      this.errorFlag = false;
   }
 
   getFileData(files) {
@@ -104,12 +196,13 @@ export class UploadDocumentComponent implements OnInit {
     return files
   }
 
-  craeteFileStructure(filelist): void {
-    for (const file of filelist) {
-      file['disabled'] = true;
-      file['ext'] = file.name
-      this.fileList.push(file);
-    }
+  createFileStructure(filelist): void {
+    this.fileList.push(...filelist.map(res => {
+      res['disabled'] = true;
+      res['ext'] = res.name
+      return res;
+    }))
+
   }
   renameFile(file, i): void {
     const splname = this.fileList[i].ext.split('.')[0];
@@ -118,114 +211,134 @@ export class UploadDocumentComponent implements OnInit {
     this.fileList[i]['disabled'] = false;
   }
   removeFile(id): void {
+    this.errorFlag = false;
     this.fileList.splice(id, 1)
   }
-  save(id): void {
+  save(id, fname): void {
     this.fileList[id]['disabled'] = true;
-    this.fileList[id].ext = document.getElementById(id)['value'] + '.' + this.fileList[id].name.split('.')[1];
+    this.fileList[id].ext = fname + '.' + this.fileList[id].name.split('.')[1];
+  }
+
+  checkJobandContactField(): boolean {
+    if (!(!!this.contact) && this.uploadToVal == entityType.Contact) {
+      this.loader = false;
+      this.popupService.open<ErrorBoxComponent>(this.resourceService.getText('ifirm.common.error'), ErrorBoxComponent, { data: this.resourceService.getText('dms.fileuploaddialog.selectcontacterror') });
+      return false;
+    }
+    if (!(!!this.job) && this.uploadToVal == entityType.Job) {
+      this.loader = false;
+      this.popupService.open<ErrorBoxComponent>(this.resourceService.getText('ifirm.common.error'), ErrorBoxComponent, { data: this.resourceService.getText('dms.fileuploaddialog.selectjoberror') });
+      return false;
+    }
+    return true;
   }
 
   async uploadFiles() {
-    this.rData = true;
+
+    this.loader = true;
+    if (!this.checkJobandContactField())
+    return;
+
     if (this.fileList.length == 0) {
-      this.rData = false;
-      this.toasterService.error('No files to upload.');
+      this.loader = false;
+      this.errorMessage = this.resourceService.getText('fe.fineuploader.messages.nofileserror');
+      this.errorFlag = true;
       return;
     }
+   
 
-    if (this.contact == null && this.uploadTo == 'number:3') {
-      this.rData = false;
-      this.toasterService.error('Please select a contact.');
-      return;
-    }
+    if (this.uploadToVal == entityType.Job)
+      this.headerName = this.resourceService.getText('dms.fileuploaddialog.uploadingfiles', ['Job', this.job])
+    if (this.uploadToVal == entityType.Contact)
+      this.headerName = this.resourceService.getText('dms.fileuploaddialog.uploadingfiles', ['Contact', this.contact])
 
-    if (this.job == null && this.uploadTo == 'number:4') {
-      this.rData = false;
-      this.toasterService.error('Please select a Job');
-      return;
-    }
-    let filedata = {} as Pdfdocument;
+    const filedata = {} as Uploaddocument;
     filedata.FolderId = this.folderId;
     filedata.TagIds = this.selectedTagList.map(item => item.id).join('');
     filedata.Hierarchy = this.hierarchy;
+    if (this.uploadToVal == entityType.Hr)
+      this.entityId = Number(this.hrSelectVal);
     filedata.EntityId = this.entityId;
     filedata.ChunkSize = this.chunkSize
-    for (const [id, k] of this.fileList.entries()) {
+    this.uploading = true;
+    let fileIds: number[] = [];
+    const mbSize = 1048576;
+    this.subscriptions.add(from(this.fileList).pipe(
+      map((val, index) => [val, index])
+    ).subscribe(async ([k, id]) => {
+
       filedata.FileName = k.ext;
       filedata.FileGuid = UUID.UUID();
-      filedata.EntityType = 3
-      filedata.FileData = k.filedata.split(':')[1];
+      filedata.EntityType = this.uploadToVal;
+      this.fileList[id]['error'] = false;
+      this.fileList[id]['progressVal'] = 1;
+      filedata.FileData = k;
       filedata.Size = k.size;
+      this.fileList[id]['fileSizeMB'] = `${(filedata.Size / mbSize).toFixed(2)} MB`;
+      let uploadRequest = await this.BuildUploadRequest(filedata.FileData, filedata);
 
-    var uploadRequest = await this.BuildUploadRequest(filedata.FileData, filedata);
-    console.log('req',uploadRequest)
+      if (uploadRequest.length > 1) {
+        // fetch request excuding last request
+        this.apiRequestExcludingLast = uploadRequest;
+        this.lareSizeFileApiCall(this.apiRequestExcludingLast, id)
+      }
+      else {
+        this.uploaddocument.uploadFilesInChunk(uploadRequest[0]).then(res => {
+          if (res && res.success) {
+            this.fileList[id]['progressVal'] = Number(this.fileList[id]['progressVal'] * 100);
 
-    if(this.enhancedmaxSize < filedata.Size)
-    {
-      const pdfMaxSizeInMB : string =  ((1000 / 1024)/1024).toString();
-      this.toasterService.error(this.resourceService.getText('dms.editpdf.pdfmaxsize').replace('{0}', pdfMaxSizeInMB));
-      this.rData = false;
-      return;
-    }
+            fileIds.push(res.data)
 
-    if (uploadRequest.length > 1) {
-      let firstAPIRequest = (uploadRequest[0].TotalParts - 1);
-      // fetch request excuding last request
-      let apiRequestExcludingLast = uploadRequest.filter(x => x.PartIndex < firstAPIRequest);
-      //Last API Request
-      let lastApiRequest = uploadRequest.find(x => x.PartIndex === firstAPIRequest);
-      let count = 0;
-      apiRequestExcludingLast.forEach(async (request: Pdfdocument) => {
-        this.pdfdocument.uploadPdfFilesInChunk(request).then(response => {
-          if (response && response.success) {
-            this.rData = false;
-            count++;
-            if (count === apiRequestExcludingLast.length) {
-              this.pdfdocument.uploadPdfFilesInChunk(lastApiRequest).then(res => {
-                if (res && res.success) {
-                  this.instance.close({ result: false });
-                  let fileIds: number[] = [];
-                  fileIds.push(res.data)
-                  this.pdfdocument.updateRetentionDateForFiles(fileIds);
-                  this.toasterService.success(this.resourceService.getText('dms.editpdf.success'));
-                }
-                else {
-                  this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
-                }
-                this.rData = false;
-              })
+            if (id == this.fileList.length - 1) {
+              this.uploaddocument.updateRetentionDateForFiles(fileIds);
+              this.loader = false;
+              this.instance.close({ result: false });
+              this.toasterService.success(this.resourceService.getText('fe.fileuploaddialog.uploadedsuccessfully'));
             }
           }
           else {
-            this.rData = false;
-            this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
+            this.fileList[id].error = true;
+            this.errorHeader = true;
           }
-        })
-      });
-    }
-    else {
-      this.pdfdocument.uploadPdfFilesInChunk(uploadRequest[0]).then(res => {
-        if (res && res.success) {
-          this.instance.close({ result: false });
-          let fileIds: number[] = [];
-          fileIds.push(res.data)
-          this.pdfdocument.updateRetentionDateForFiles(fileIds);
-          this.toasterService.success(this.resourceService.getText('dms.editpdf.success'));
-        }
-        else {
-          this.toasterService.error(this.resourceService.getText('dms.editpdf.error'));
-        }
-        this.rData = false;
-      })
-    }
 
-    }
+        },
+          (error) => {
+            this.errorHeader = true;
+            this.fileList[id].error = true;
+          })
+      }
+    }))
+  }
+
+  lareSizeFileApiCall(filedata, id): void {
+
+    this.subscriptions.add(from(this.apiRequestExcludingLast).pipe(
+      concatMap(userId =>
+        this.uploaddocument.uploadFilesInChunk(userId))).subscribe(res => {
+          this.fileList[id]['progressVal'] += Number((100 / filedata[0].TotalParts).toFixed());
+          if (res.data != 0) {
+            this.fileList[id]['progressVal'] = 100;
+            let fileIds: number[] = [];
+            fileIds.push(res.data)
+            this.uploaddocument.updateRetentionDateForFiles(fileIds);
+            if (id == this.fileList.length - 1) {
+              this.loader = false;
+              this.instance.close({ result: false });
+              this.toasterService.success(this.resourceService.getText('fe.fileuploaddialog.uploadedsuccessfully'));
+            }
+          }
+        }, (error) => {
+          this.loader = false;
+          this.errorHeader = true;
+          this.fileList[id].error = true;
+        }
+        ))
   }
 
   private getTagList(insertLinkInfo: InsertLinkModel): void {
-    this.rData = true
+    this.loader = true
     this.dmsDialogApiService.GetTagList(insertLinkInfo).then(res => {
-      this.rData = false;
+      this.loader = false;
       this.tagNames = res.TagList;
       this.tags = res.TagList.map((value) => ({
         id: value.TagId,
@@ -236,13 +349,13 @@ export class UploadDocumentComponent implements OnInit {
       }
     }).catch(
       exception => {
-        this.rData = false;
+        this.loader = false;
         this.toasterService.error(this.resourceService.getText('dms.common.errormessage'));
       });
   }
 
 
-   dropped(e): void {
+  dropped(e): void {
     const file_data = []
     for (const droppedFile of e) {
       if (droppedFile.fileEntry.isFile) {
@@ -252,7 +365,7 @@ export class UploadDocumentComponent implements OnInit {
           if (file_data.length == e.length) {
             this.getFileData(file_data);
             this.checkDuplicateFile(file_data)
-            this.craeteFileStructure(this.checkDuplicateFile(file_data))
+            this.createFileStructure(this.checkDuplicateFile(file_data))
           }
           e.size = fileData.size
         })
@@ -264,81 +377,139 @@ export class UploadDocumentComponent implements OnInit {
     if (this.fileList.length > 0) {
       for (const [id, filedata] of filelist.entries()) {
         this.fileList.forEach((res) => {
+          if(!this.validateFileNameLength(filedata.name)){     
+          this.errorMessage = this.resourceService.getText('ifirm.common.filenamevalidationmsg', [AppConstants.maxFileNameLength])
+              filelist.splice(id, 1);
+              this.errorFlag = true
+          }
           if (res.ext == filedata.name) {
             filelist.splice(id, 1);
-            this.toasterService.error('This file has already been selected and will not be uploaded.');
-
+            this.errorMessage = this.resourceService.getText('dms.fileuploaddialog.filenameexists');
+            this.errorFlag = true;
           }
         }
         )
       }
       return filelist
     }
-    return filelist;
+    else{
+      if(!this.validateFileNameLength(filelist[0].name)){     
+        this.errorMessage = this.resourceService.getText('ifirm.common.filenamevalidationmsg', [AppConstants.maxFileNameLength])
+            this.errorFlag = true
+            }
+            else 
+            return filelist
+    }
+    
+  }
+
+  validateFileNameLength(fileName) :boolean{
+    const dotExtIndex = fileName.lastIndexOf(".");
+     const name = fileName.substring(0, dotExtIndex);
+      return name && name.length > AppConstants.maxFileNameLength ? false : true;
   }
 
   showContactLookup(): void {
-    this.dmsDialogService.openDialog('contactLookup', null, null);
-    this.clientlookupservice._selectclientdata.subscribe(res => {
-      this.entityId = Number(res.id);
-      this.contact = res.clientName;
-    })
-  }
-  showJobLookup(): void {
-    this.dmsDialogService.openDialog('jobLookup', null, null);
-    this.joblookupservice.selectjobdata.subscribe(res => {
-      this.entityId = Number(res.jobId);
-      this.job = res.clientName;
-    })
+    const config = new ModalPopupConfig();
+    let instance = this.popupservice.open<ClientLookupComponent>(this.resourceService.getText('ifirm.common.contactlookup'), ClientLookupComponent, config);
+    const subscription = instance.afterClosed.subscribe(result => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      if (result !== null) {
+        this.entityId = Number(result.data.id);
+        this.contact = result.data.clientName;
+      }
+    });
   }
 
-  async BuildUploadRequest(fileData: any, pdfdocumentRequest: Pdfdocument): Promise<Pdfdocument[]> {
-    console.log('build',pdfdocumentRequest)
-    let uploadRequests: Pdfdocument[] = [];
+
+  showJobLookup(): void {
+    const config = new ModalPopupConfig();
+    let instance = this.popupservice.open<JobLookupComponent>(this.resourceService.getText('ifirm.common.joblookup'), JobLookupComponent, config);
+    const subscription = instance.afterClosed.subscribe(result => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      if (result !== null) {
+        this.entityId = Number(result.data.clientId);
+        this.job = result.data.clientName;
+      }
+      this.folderId = result.FolderId;
+      this.hierarchy = result.Hierarchy;
+
+    });
+  }
+
+  UploadChange(e): void {
+    this.folderId = null;
+    const pathVal = e.target.value;
+    if (pathVal == this.uploadEnum.Hr) {
+      if (this.users.length == 0)
+        this.getUsers(false);
+    }
+    this.setDefaultPath(Number(pathVal));
+  }
+
+  async BuildUploadRequest(fileData: any, uploaddocumentRequest: Uploaddocument): Promise<Uploaddocument[]> {
+    let uploadRequests: Uploaddocument[] = [];
     let fileguid = UUID.UUID()
-    const blob = new Blob([fileData], { type: 'application/pdf' });
-    if (this.chunkSize >= blob.size) {
-      pdfdocumentRequest.TotalParts = 1;
+    const blob = new Blob([fileData]);
+    if (this.chunkSize >= uploaddocumentRequest.Size) {
+      uploaddocumentRequest.TotalParts = 1;
     } else {
-      this.totalParts = blob.size / this.chunkSize;
-      pdfdocumentRequest.TotalParts = Math.ceil(this.totalParts);
+      this.totalParts = uploaddocumentRequest.Size / this.chunkSize;
+      uploaddocumentRequest.TotalParts = Math.ceil(this.totalParts);
     }
     let i = 0;
     let startOffsetIndex = 0;
     let totalOffsetIndex = 0;
     do {
-      var uploadRequest = new Pdfdocument();
-      if (blob.size < (totalOffsetIndex + this.chunkSize)) {
+      var uploadRequest = new Uploaddocument();
+      if (uploaddocumentRequest.Size < (totalOffsetIndex + this.chunkSize)) {
         totalOffsetIndex = totalOffsetIndex + (blob.size - totalOffsetIndex);
       }
       else {
-        if(i == 0)
-        totalOffsetIndex = 0;
-        else
         totalOffsetIndex = totalOffsetIndex + this.chunkSize;
       }
-      var slice: BlobPart = blob.slice(startOffsetIndex, totalOffsetIndex);
+      let slice: BlobPart = blob.slice(startOffsetIndex, totalOffsetIndex);
       startOffsetIndex = startOffsetIndex + this.chunkSize;
       uploadRequest.PartIndex = i;
-      uploadRequest.PartByteOffsetIndex = totalOffsetIndex;
+      uploadRequest.PartByteOffsetIndex = i == 0 ? 0 : totalOffsetIndex;
       uploadRequest.FileData = [slice];
-      uploadRequest.Size = blob.size;
-      uploadRequest.TotalParts = pdfdocumentRequest.TotalParts;
-      uploadRequest.ChunkSize = pdfdocumentRequest.ChunkSize;
-      uploadRequest.createdDateTime = pdfdocumentRequest.createdDateTime;
-      uploadRequest.Source = pdfdocumentRequest.Source;
-      uploadRequest.EntityType = pdfdocumentRequest.EntityType;
-      uploadRequest.TagIds = pdfdocumentRequest.TagIds;
-      uploadRequest.EntityId = pdfdocumentRequest.EntityId;
-      uploadRequest.Hierarchy = pdfdocumentRequest.Hierarchy;
-      uploadRequest.FolderId = pdfdocumentRequest.FolderId;
+      uploadRequest.Size = uploaddocumentRequest.Size;
+      uploadRequest.TotalParts = uploaddocumentRequest.TotalParts;
+      uploadRequest.ChunkSize = uploaddocumentRequest.ChunkSize;
+      uploadRequest.createdDateTime = uploaddocumentRequest.createdDateTime;
+      uploadRequest.Source = uploaddocumentRequest.Source;
+      uploadRequest.EntityType = uploaddocumentRequest.EntityType;
+      uploadRequest.TagIds = uploaddocumentRequest.TagIds;
+      uploadRequest.EntityId = uploaddocumentRequest.EntityId;
+      uploadRequest.Hierarchy = uploaddocumentRequest.Hierarchy;
+      uploadRequest.FolderId = uploaddocumentRequest.FolderId;
       uploadRequest.FileGuid = fileguid;
-      uploadRequest.FileName = pdfdocumentRequest.FileName;
-      uploadRequest.IsUploadFromTrayapp = pdfdocumentRequest.IsUploadFromTrayapp;
+      uploadRequest.FileName = uploaddocumentRequest.FileName;
+      uploadRequest.IsUploadFromTrayapp = uploaddocumentRequest.IsUploadFromTrayapp;
       uploadRequests.push(uploadRequest);
       i++;
-    } while (i < pdfdocumentRequest.TotalParts)
+    } while (i < uploaddocumentRequest.TotalParts)
 
     return uploadRequests;
+  }
+
+  private isAllowApmAccess(): boolean {
+    return this.roles.allowApmAccess && this.roles.viewUpload;
+  }
+
+  private isAllowInternaldocuments(): boolean {
+    return this.roles.internalDocumentsViewEdit && this.roles.firmDocuments;
+  }
+
+  private isContactAllowed(): boolean {
+    return this.roles.viewUpload && this.roles.contactView;
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe()
   }
 }
